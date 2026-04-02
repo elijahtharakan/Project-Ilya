@@ -138,6 +138,22 @@ class PlannerOutput:
     debug_summary: str
 
 
+@dataclass(frozen=True)
+class ExternalPuckEstimate:
+    timestamp: float
+    x: float
+    y: float
+    vx: float
+    vy: float
+    confidence: float = 1.0
+    valid_sample_count: int = 1
+    intercept_valid: bool = False
+    intercept_time: Optional[float] = None
+    intercept_y: Optional[float] = None
+    prediction_confidence: float = 0.0
+    prediction_reason: str = "Estimator-provided prediction."
+
+
 class CSVDecisionLogger:
     def __init__(self, path: Optional[str]) -> None:
         self._path = Path(path) if path else None
@@ -642,6 +658,59 @@ class AirHockeyPlanner:
 
         previous_state = self._estimated_paddle_state
         output = self.strategy.plan(cycle_time, puck_state, previous_state, prediction)
+        return self._finalize_output(output, previous_state)
+
+    def update_from_estimator(
+        self,
+        estimate: Optional[ExternalPuckEstimate],
+        paddle_feedback: Optional[PaddleState] = None,
+        now: Optional[float] = None,
+    ) -> PlannerOutput:
+        """Update planner from external estimator state, bypassing internal prediction."""
+        if paddle_feedback is not None:
+            self._estimated_paddle_state = paddle_feedback
+
+        puck_state = None
+        prediction = None
+        cycle_time = now
+
+        if estimate is not None:
+            puck_state = PuckState(
+                timestamp=estimate.timestamp,
+                x=estimate.x,
+                y=estimate.y,
+                vx=estimate.vx,
+                vy=estimate.vy,
+                confidence=clamp(estimate.confidence, 0.0, 1.0),
+                valid_sample_count=max(1, int(estimate.valid_sample_count)),
+            )
+            cycle_time = estimate.timestamp if cycle_time is None else cycle_time
+
+            if estimate.intercept_valid:
+                prediction = PredictionResult(
+                    is_valid=True,
+                    intercept_time=estimate.intercept_time,
+                    intercept_y=estimate.intercept_y,
+                    confidence=clamp(estimate.prediction_confidence, 0.0, 1.0),
+                    reason=estimate.prediction_reason,
+                )
+            else:
+                prediction = PredictionResult(
+                    is_valid=False,
+                    intercept_time=estimate.intercept_time,
+                    intercept_y=estimate.intercept_y,
+                    confidence=0.0,
+                    reason=estimate.prediction_reason,
+                )
+
+        if cycle_time is None:
+            cycle_time = self._estimated_paddle_state.timestamp
+
+        previous_state = self._estimated_paddle_state
+        output = self.strategy.plan(cycle_time, puck_state, previous_state, prediction)
+        return self._finalize_output(output, previous_state)
+
+    def _finalize_output(self, output: PlannerOutput, previous_state: PaddleState) -> PlannerOutput:
         dt = max(output.timestamp - previous_state.timestamp, 1e-3)
         self._estimated_paddle_state = PaddleState(
             timestamp=output.timestamp,
