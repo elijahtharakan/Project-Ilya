@@ -34,6 +34,25 @@ Tracker:
 python puck_tracker.py --camera 0 --width 640 --height 480 --udp-host 127.0.0.1 --udp-port 5005
 ```
 
+Visual camera verification (with velocity arrow overlay):
+
+```bash
+python puck_tracker.py --camera 0 --width 640 --height 480
+```
+
+Notes:
+- Click the puck once in the Puck Tracker window to auto-set HSV bounds.
+- Move the puck around and watch the blue arrow and velocity text update in real time.
+- Use `--velocity-arrow-scale` to tune arrow length (default `0.15`).
+- A pink horizontal line shows the intercept row (`--intercept-y-px`), and a pink dot shows predicted crossing point.
+- The overlay text `INTERCEPT x:... t:...s` updates as you move the puck.
+
+Example with explicit intercept row and larger arrow:
+
+```bash
+python puck_tracker.py --camera 0 --width 640 --height 480 --intercept-y-px 420 --velocity-arrow-scale 0.2
+```
+
 Estimator:
 
 ```bash
@@ -151,3 +170,14 @@ python -m unittest discover -s tests -v
 
 No-hardware integration coverage includes:
 - `tests/test_no_hardware_pipeline.py` which starts `planner_motor_bridge.py`, sends a synthetic estimator packet, and verifies a motor target packet is emitted.
+
+Camera hardware verification test:
+
+```powershell
+$env:RUN_CAMERA_TESTS="1"
+python -m unittest tests/test_camera_pipeline.py -v
+```
+
+Notes:
+- This test requires a webcam connected and available as camera index 0.
+- The test runs tracker in `--no-gui` mode and verifies that real camera packets are emitted over UDP.

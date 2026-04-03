@@ -66,6 +66,35 @@ def parse_args():
         default=5005,
         help="UDP port for coordinate packets (default: 5005).",
     )
+    parser.add_argument(
+        "--no-gui",
+        action="store_true",
+        help="Run without display windows (useful for automated tests/headless runs).",
+    )
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=0,
+        help="Stop after this many frames (0 means run until interrupted).",
+    )
+    parser.add_argument(
+        "--velocity-arrow-scale",
+        type=float,
+        default=0.15,
+        help="Arrow lookahead in seconds for velocity visualization (default: 0.15).",
+    )
+    parser.add_argument(
+        "--intercept-y-px",
+        type=float,
+        default=420.0,
+        help="Image Y row used for live intercept prediction overlay (default: 420).",
+    )
+    parser.add_argument(
+        "--max-intercept-time",
+        type=float,
+        default=3.0,
+        help="Ignore intercept predictions farther than this many seconds out.",
+    )
     return parser.parse_args()
 
 
@@ -111,6 +140,20 @@ def build_tracker_packet(timestamp, detected, center, radius, width, height):
     }
 
 
+def predict_intercept_pixel(center, vx, vy, intercept_y, frame_width, max_time_s):
+    """Predict where current motion crosses intercept_y in pixel coordinates."""
+    if abs(vy) < 1e-6:
+        return False, -1.0, float(intercept_y), -1.0
+
+    tti = (float(intercept_y) - float(center[1])) / float(vy)
+    if tti <= 0.0 or tti > max_time_s:
+        return False, -1.0, float(intercept_y), -1.0
+
+    x_pred = float(center[0]) + float(vx) * tti
+    x_pred = max(0.0, min(float(frame_width - 1), x_pred))
+    return True, x_pred, float(intercept_y), float(tti)
+
+
 def main():
     global current_hsv_frame
     args = parse_args()
@@ -127,24 +170,35 @@ def main():
         udp_target = (args.udp_host, args.udp_port)
         print(f"UDP output enabled: {udp_target[0]}:{udp_target[1]}")
 
-    cv2.namedWindow("Trackbars")
-    cv2.namedWindow("Puck Tracker")
-    cv2.namedWindow("Mask")
-    cv2.setMouseCallback("Puck Tracker", pick_color)
+    if not args.no_gui:
+        cv2.namedWindow("Trackbars")
+        cv2.namedWindow("Puck Tracker")
+        cv2.namedWindow("Mask")
+        cv2.setMouseCallback("Puck Tracker", pick_color)
 
-    cv2.createTrackbar("L-H", "Trackbars", 0, 179, nothing)
-    cv2.createTrackbar("L-S", "Trackbars", 0, 255, nothing)
-    cv2.createTrackbar("L-V", "Trackbars", 0, 255, nothing)
-    cv2.createTrackbar("U-H", "Trackbars", 179, 179, nothing)
-    cv2.createTrackbar("U-S", "Trackbars", 255, 255, nothing)
-    cv2.createTrackbar("U-V", "Trackbars", 255, 255, nothing)
+        cv2.createTrackbar("L-H", "Trackbars", 0, 179, nothing)
+        cv2.createTrackbar("L-S", "Trackbars", 0, 255, nothing)
+        cv2.createTrackbar("L-V", "Trackbars", 0, 255, nothing)
+        cv2.createTrackbar("U-H", "Trackbars", 179, 179, nothing)
+        cv2.createTrackbar("U-S", "Trackbars", 255, 255, nothing)
+        cv2.createTrackbar("U-V", "Trackbars", 255, 255, nothing)
 
-    print(
-        "Prompts:\n"
-        " - Click the puck in 'Puck Tracker' to auto-set HSV filters.\n"
-        " - Press 'Esc' to exit.\n"
-        " - Optional outputs: --send-stdout and/or --udp-host <host>."
-    )
+        print(
+            "Prompts:\n"
+            " - Click the puck in 'Puck Tracker' to auto-set HSV filters.\n"
+            " - Press 'Esc' to exit.\n"
+            " - Optional outputs: --send-stdout and/or --udp-host <host>."
+        )
+    else:
+        print("Running in no-gui mode.")
+
+    frame_count = 0
+    prev_detected = False
+    prev_center = (-1, -1)
+    prev_timestamp = None
+    smoothed_vx = 0.0
+    smoothed_vy = 0.0
+    velocity_alpha = 0.35
 
     while True:
         ret, frame = cap.read()
@@ -156,12 +210,16 @@ def main():
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         current_hsv_frame = hsv
 
-        l_h = cv2.getTrackbarPos("L-H", "Trackbars")
-        l_s = cv2.getTrackbarPos("L-S", "Trackbars")
-        l_v = cv2.getTrackbarPos("L-V", "Trackbars")
-        u_h = cv2.getTrackbarPos("U-H", "Trackbars")
-        u_s = cv2.getTrackbarPos("U-S", "Trackbars")
-        u_v = cv2.getTrackbarPos("U-V", "Trackbars")
+        if args.no_gui:
+            l_h, l_s, l_v = 0, 0, 0
+            u_h, u_s, u_v = 179, 255, 255
+        else:
+            l_h = cv2.getTrackbarPos("L-H", "Trackbars")
+            l_s = cv2.getTrackbarPos("L-S", "Trackbars")
+            l_v = cv2.getTrackbarPos("L-V", "Trackbars")
+            u_h = cv2.getTrackbarPos("U-H", "Trackbars")
+            u_s = cv2.getTrackbarPos("U-S", "Trackbars")
+            u_v = cv2.getTrackbarPos("U-V", "Trackbars")
 
         lower_bound = np.array([l_h, l_s, l_v])
         upper_bound = np.array([u_h, u_s, u_v])
@@ -172,8 +230,21 @@ def main():
 
         detected, center, radius = detect_puck_from_mask(mask, args.min_area)
 
+        timestamp = time.time()
+
+        if detected and prev_detected and prev_timestamp is not None:
+            dt = timestamp - prev_timestamp
+            if dt > 1e-6:
+                inst_vx = (center[0] - prev_center[0]) / dt
+                inst_vy = (center[1] - prev_center[1]) / dt
+                smoothed_vx = velocity_alpha * inst_vx + (1.0 - velocity_alpha) * smoothed_vx
+                smoothed_vy = velocity_alpha * inst_vy + (1.0 - velocity_alpha) * smoothed_vy
+        elif not detected:
+            smoothed_vx = 0.0
+            smoothed_vy = 0.0
+
         packet = build_tracker_packet(
-            timestamp=time.time(),
+            timestamp=timestamp,
             detected=detected,
             center=center,
             radius=radius,
@@ -190,6 +261,51 @@ def main():
         if detected:
             cv2.circle(frame, center, int(radius), (0, 255, 255), 2)
             cv2.circle(frame, center, 5, (0, 0, 255), -1)
+
+            intercept_y = int(max(0, min(args.height - 1, args.intercept_y_px)))
+            cv2.line(frame, (0, intercept_y), (args.width - 1, intercept_y), (200, 120, 255), 1)
+
+            arrow_dx = smoothed_vx * args.velocity_arrow_scale
+            arrow_dy = smoothed_vy * args.velocity_arrow_scale
+            arrow_len = float(np.hypot(arrow_dx, arrow_dy))
+            if arrow_len > 3.0:
+                end_x = int(max(0, min(args.width - 1, center[0] + arrow_dx)))
+                end_y = int(max(0, min(args.height - 1, center[1] + arrow_dy)))
+                cv2.arrowedLine(frame, center, (end_x, end_y), (255, 200, 0), 2, tipLength=0.25)
+
+            valid_int, int_x, int_y, tti = predict_intercept_pixel(
+                center=center,
+                vx=smoothed_vx,
+                vy=smoothed_vy,
+                intercept_y=intercept_y,
+                frame_width=args.width,
+                max_time_s=args.max_intercept_time,
+            )
+            if valid_int:
+                pred_pt = (int(int_x), int(int_y))
+                cv2.circle(frame, pred_pt, 7, (255, 0, 255), -1)
+                cv2.line(frame, center, pred_pt, (255, 0, 255), 1)
+                cv2.putText(
+                    frame,
+                    f"INTERCEPT x:{pred_pt[0]} t:{tti:.2f}s",
+                    (10, 84),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.58,
+                    (255, 0, 255),
+                    2,
+                )
+            else:
+                cv2.putText(
+                    frame,
+                    "INTERCEPT: n/a",
+                    (10, 84),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.58,
+                    (180, 180, 180),
+                    2,
+                )
+
+            speed = float(np.hypot(smoothed_vx, smoothed_vy))
             cv2.putText(
                 frame,
                 f"TRACKING x:{center[0]} y:{center[1]}",
@@ -197,6 +313,15 @@ def main():
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7,
                 (0, 255, 0),
+                2,
+            )
+            cv2.putText(
+                frame,
+                f"v=({smoothed_vx:.1f}, {smoothed_vy:.1f}) px/s | speed={speed:.1f}",
+                (10, 58),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 200, 0),
                 2,
             )
         else:
@@ -210,16 +335,27 @@ def main():
                 2,
             )
 
-        cv2.imshow("Puck Tracker", frame)
-        cv2.imshow("Mask", mask)
+        frame_count += 1
 
-        if cv2.waitKey(1) == 27:
+        if args.max_frames > 0 and frame_count >= args.max_frames:
             break
+
+        prev_detected = detected
+        prev_center = center
+        prev_timestamp = timestamp
+
+        if not args.no_gui:
+            cv2.imshow("Puck Tracker", frame)
+            cv2.imshow("Mask", mask)
+
+            if cv2.waitKey(1) == 27:
+                break
 
     cap.release()
     if udp_socket is not None:
         udp_socket.close()
-    cv2.destroyAllWindows()
+    if not args.no_gui:
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":

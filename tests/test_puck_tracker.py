@@ -3,7 +3,7 @@ import unittest
 import cv2
 import numpy as np
 
-from puck_tracker import build_tracker_packet, detect_puck_from_mask
+from puck_tracker import build_tracker_packet, detect_puck_from_mask, predict_intercept_pixel
 
 
 class TestPuckTracker(unittest.TestCase):
@@ -62,6 +62,35 @@ class TestPuckTracker(unittest.TestCase):
         self.assertEqual(packet["x_norm"], -1.0)
         self.assertEqual(packet["y_norm"], -1.0)
         self.assertEqual(packet["radius"], 0.0)
+
+    def test_predict_intercept_pixel_valid(self):
+        valid, x_pred, y_pred, tti = predict_intercept_pixel(
+            center=(320, 200),
+            vx=100.0,
+            vy=200.0,
+            intercept_y=400,
+            frame_width=640,
+            max_time_s=3.0,
+        )
+
+        self.assertTrue(valid)
+        self.assertAlmostEqual(tti, 1.0, places=3)
+        self.assertAlmostEqual(x_pred, 420.0, places=3)
+        self.assertEqual(y_pred, 400.0)
+
+    def test_predict_intercept_pixel_invalid_if_moving_away(self):
+        valid, x_pred, _y_pred, tti = predict_intercept_pixel(
+            center=(320, 420),
+            vx=50.0,
+            vy=100.0,
+            intercept_y=300,
+            frame_width=640,
+            max_time_s=3.0,
+        )
+
+        self.assertFalse(valid)
+        self.assertEqual(x_pred, -1.0)
+        self.assertEqual(tti, -1.0)
 
 
 if __name__ == "__main__":
