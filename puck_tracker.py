@@ -42,6 +42,12 @@ def pick_color(event, x, y, _flags, _param):
 def parse_args():
     parser = argparse.ArgumentParser(description="Live puck tracker with coordinate publishing.")
     parser.add_argument("--camera", type=int, default=0, help="Camera index (default: 0)")
+    parser.add_argument(
+        "--capture-backend",
+        choices=["opencv", "picamera2"],
+        default="opencv",
+        help="Camera backend to use (opencv for USB/webcam, picamera2 for Raspberry Pi camera module).",
+    )
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")
     parser.add_argument(
@@ -96,6 +102,57 @@ def parse_args():
         help="Ignore intercept predictions farther than this many seconds out.",
     )
     return parser.parse_args()
+
+
+class OpenCVCapture:
+    def __init__(self, camera_index):
+        self._capture = cv2.VideoCapture(camera_index)
+
+    def isOpened(self):
+        return self._capture.isOpened()
+
+    def read(self):
+        return self._capture.read()
+
+    def release(self):
+        self._capture.release()
+
+
+class Picamera2Capture:
+    def __init__(self, width, height):
+        try:
+            from picamera2 import Picamera2
+        except ImportError as exc:
+            raise RuntimeError(
+                "Picamera2 backend selected but picamera2 is not installed. "
+                "Install python3-picamera2 on the Pi or use --capture-backend opencv."
+            ) from exc
+
+        self._picamera2 = Picamera2()
+        config = self._picamera2.create_preview_configuration(main={"size": (width, height), "format": "RGB888"})
+        self._picamera2.configure(config)
+        self._picamera2.start()
+        self._opened = True
+
+    def isOpened(self):
+        return self._opened
+
+    def read(self):
+        frame_rgb = self._picamera2.capture_array()
+        if frame_rgb is None:
+            return False, None
+        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+        return True, frame_bgr
+
+    def release(self):
+        self._picamera2.stop()
+        self._opened = False
+
+
+def create_capture(args):
+    if args.capture_backend == "picamera2":
+        return Picamera2Capture(args.width, args.height)
+    return OpenCVCapture(args.camera)
 
 
 def detect_puck_from_mask(mask, min_area):
@@ -158,9 +215,14 @@ def main():
     global current_hsv_frame
     args = parse_args()
 
-    cap = cv2.VideoCapture(args.camera)
+    try:
+        cap = create_capture(args)
+    except RuntimeError as exc:
+        print(str(exc))
+        return
+
     if not cap.isOpened():
-        print("Error: Could not open webcam.")
+        print("Error: Could not open camera.")
         return
 
     udp_socket = None

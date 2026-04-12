@@ -26,6 +26,77 @@ The system is split into independent processes so planning and motor control rem
    - Receives target intent packets.
    - Performs actuator-specific control loops and hardware commands.
 
+## Raspberry Pi 5 Setup
+
+Recommended baseline on the Pi:
+
+1. Flash Raspberry Pi OS 64-bit and update packages.
+2. Enable the camera in `raspi-config` if needed.
+3. Verify the camera shows up as a capture device before running the repo.
+4. Install Python dependencies with either apt packages or a virtual environment.
+
+Suggested install commands:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv python3-opencv python3-numpy
+```
+
+If you are using the Pi Camera Module, also install Picamera2 support:
+
+```bash
+sudo apt install -y python3-picamera2
+```
+
+If you prefer a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install numpy opencv-python
+```
+
+Camera sanity check:
+
+```bash
+python puck_tracker.py --camera 0 --width 640 --height 480 --no-gui --max-frames 30 --send-stdout
+```
+
+For the Pi Camera Module specifically:
+
+```bash
+python puck_tracker.py --capture-backend picamera2 --width 640 --height 480 --no-gui --max-frames 30 --send-stdout
+```
+
+If that prints packets, the camera is working.
+
+One-command Pi demo launcher:
+
+```bash
+python run_pi_demo.py
+```
+
+For Pi Camera Module use:
+
+```bash
+python run_pi_demo.py --capture-backend picamera2
+```
+
+If the Pi is headless or you want no windows:
+
+```bash
+python run_pi_demo.py --no-gui
+```
+
+Combine both for a headless Pi Camera Module run:
+
+```bash
+python run_pi_demo.py --no-gui --capture-backend picamera2
+```
+
+If your camera is not index `0`, change it with `--camera N`.
+
 ## Run Commands
 
 Tracker:
