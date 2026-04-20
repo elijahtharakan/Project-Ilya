@@ -82,6 +82,11 @@ class TestNoHardwarePipeline(unittest.TestCase):
             self.assertIn(output_packet.get("mode"), {"DEFENSE", "ATTACK", "HOME", "SAFE_HOLD"})
             self.assertIsInstance(output_packet.get("target_x_m"), float)
             self.assertIsInstance(output_packet.get("target_y_m"), float)
+            self.assertTrue(output_packet.get("puck_detected"))
+            self.assertIsInstance(output_packet.get("puck_x_m"), float)
+            self.assertIsInstance(output_packet.get("puck_y_m"), float)
+            self.assertIn("predicted_intercept_time_s", output_packet)
+            self.assertIn("predicted_intercept_y_m", output_packet)
         finally:
             proc.terminate()
             try:

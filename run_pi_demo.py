@@ -4,6 +4,8 @@ import sys
 import time
 from pathlib import Path
 
+#python run_pi_demo.py --visualizer --flip-horizontal
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the camera-backed air hockey pipeline on a Raspberry Pi.")
@@ -16,6 +18,16 @@ def parse_args():
     )
     parser.add_argument("--width", type=int, default=640, help="Tracker frame width (default: 640).")
     parser.add_argument("--height", type=int, default=480, help="Tracker frame height (default: 480).")
+    parser.add_argument(
+        "--flip-horizontal",
+        action="store_true",
+        help="Flip the camera feed left-to-right before tracking and display.",
+    )
+    parser.add_argument(
+        "--flip-vertical",
+        action="store_true",
+        help="Flip the camera feed top-to-bottom before tracking and display.",
+    )
     parser.add_argument(
         "--prediction-source",
         choices=["estimator", "planner"],
@@ -31,6 +43,11 @@ def parse_args():
         "--stay-alive",
         action="store_true",
         help="Keep the supporting processes running after the tracker exits.",
+    )
+    parser.add_argument(
+        "--visualizer",
+        action="store_true",
+        help="Show the top-down table visualizer instead of the mock motor receiver.",
     )
     return parser.parse_args()
 
@@ -51,15 +68,31 @@ def main():
     args = parse_args()
     root = Path(__file__).resolve().parent
 
-    commands = [
-        [
-            sys.executable,
-            str(root / "mock_motor_controller.py"),
-            "--listen-host",
-            "127.0.0.1",
-            "--listen-port",
-            "5007",
-        ],
+    commands = []
+    if args.visualizer:
+        commands.append(
+            [
+                sys.executable,
+                str(root / "table_visualizer.py"),
+                "--listen-host",
+                "127.0.0.1",
+                "--listen-port",
+                "5007",
+            ]
+        )
+    else:
+        commands.append(
+            [
+                sys.executable,
+                str(root / "mock_motor_controller.py"),
+                "--listen-host",
+                "127.0.0.1",
+                "--listen-port",
+                "5007",
+            ]
+        )
+
+    commands.extend([
         [
             sys.executable,
             str(root / "planner_motor_bridge.py"),
@@ -86,8 +119,8 @@ def main():
             "127.0.0.1",
             "--output-udp-port",
             "5006",
-            "--intercept-y",
-            "420",
+            "--intercept-x",
+            "38",
         ],
         [
             sys.executable,
@@ -105,10 +138,14 @@ def main():
             "--udp-port",
             "5005",
         ],
-    ]
+    ])
 
     if args.no_gui:
         commands[-1].append("--no-gui")
+    if args.flip_horizontal:
+        commands[-1].append("--flip-horizontal")
+    if args.flip_vertical:
+        commands[-1].append("--flip-vertical")
 
     processes = []
     print("Starting Pi camera pipeline...")

@@ -10,9 +10,14 @@ def parse_args():
         description="Run full no-hardware air hockey pipeline with one command."
     )
     parser.add_argument("--prediction-source", choices=["estimator", "planner"], default="estimator")
-    parser.add_argument("--mode", choices=["toward", "away", "zigzag"], default="toward")
-    parser.add_argument("--feed-seconds", type=float, default=8.0)
+    parser.add_argument("--mode", choices=["showcase", "toward", "away", "zigzag", "attack"], default="showcase")
+    parser.add_argument("--feed-seconds", type=float, default=12.0)
     parser.add_argument("--stay-alive", action="store_true", help="Keep services running after feeder exits.")
+    parser.add_argument(
+        "--visualizer",
+        action="store_true",
+        help="Show the top-down table visualizer instead of the mock motor receiver.",
+    )
     return parser.parse_args()
 
 
@@ -32,15 +37,31 @@ def main():
     args = parse_args()
     root = Path(__file__).resolve().parent
 
-    commands = [
-        [
-            sys.executable,
-            str(root / "mock_motor_controller.py"),
-            "--listen-host",
-            "127.0.0.1",
-            "--listen-port",
-            "5007",
-        ],
+    commands = []
+    if args.visualizer:
+        commands.append(
+            [
+                sys.executable,
+                str(root / "table_visualizer.py"),
+                "--listen-host",
+                "127.0.0.1",
+                "--listen-port",
+                "5007",
+            ]
+        )
+    else:
+        commands.append(
+            [
+                sys.executable,
+                str(root / "mock_motor_controller.py"),
+                "--listen-host",
+                "127.0.0.1",
+                "--listen-port",
+                "5007",
+            ]
+        )
+
+    commands.extend([
         [
             sys.executable,
             str(root / "planner_motor_bridge.py"),
@@ -67,10 +88,10 @@ def main():
             "127.0.0.1",
             "--output-udp-port",
             "5006",
-            "--intercept-y",
-            "420",
+            "--intercept-x",
+            "38",
         ],
-    ]
+    ])
 
     feeder_cmd = [
         sys.executable,

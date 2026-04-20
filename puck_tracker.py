@@ -51,6 +51,16 @@ def parse_args():
     parser.add_argument("--width", type=int, default=640, help="Frame width (default: 640)")
     parser.add_argument("--height", type=int, default=480, help="Frame height (default: 480)")
     parser.add_argument(
+        "--flip-horizontal",
+        action="store_true",
+        help="Flip the camera feed left-to-right before tracking and display.",
+    )
+    parser.add_argument(
+        "--flip-vertical",
+        action="store_true",
+        help="Flip the camera feed top-to-bottom before tracking and display.",
+    )
+    parser.add_argument(
         "--min-area",
         type=float,
         default=500.0,
@@ -90,10 +100,12 @@ def parse_args():
         help="Arrow lookahead in seconds for velocity visualization (default: 0.15).",
     )
     parser.add_argument(
+        "--intercept-x-px",
         "--intercept-y-px",
+        dest="intercept_x_px",
         type=float,
-        default=420.0,
-        help="Image Y row used for live intercept prediction overlay (default: 420).",
+        default=38.0,
+        help="Image X column used for live intercept prediction overlay (default: 38).",
     )
     parser.add_argument(
         "--max-intercept-time",
@@ -197,18 +209,18 @@ def build_tracker_packet(timestamp, detected, center, radius, width, height):
     }
 
 
-def predict_intercept_pixel(center, vx, vy, intercept_y, frame_width, max_time_s):
-    """Predict where current motion crosses intercept_y in pixel coordinates."""
-    if abs(vy) < 1e-6:
-        return False, -1.0, float(intercept_y), -1.0
+def predict_intercept_pixel(center, vx, vy, intercept_x, frame_height, max_time_s):
+    """Predict where current motion crosses intercept_x in pixel coordinates."""
+    if abs(vx) < 1e-6:
+        return False, float(intercept_x), -1.0, -1.0
 
-    tti = (float(intercept_y) - float(center[1])) / float(vy)
+    tti = (float(intercept_x) - float(center[0])) / float(vx)
     if tti <= 0.0 or tti > max_time_s:
-        return False, -1.0, float(intercept_y), -1.0
+        return False, float(intercept_x), -1.0, -1.0
 
-    x_pred = float(center[0]) + float(vx) * tti
-    x_pred = max(0.0, min(float(frame_width - 1), x_pred))
-    return True, x_pred, float(intercept_y), float(tti)
+    y_pred = float(center[1]) + float(vy) * tti
+    y_pred = max(0.0, min(float(frame_height - 1), y_pred))
+    return True, float(intercept_x), y_pred, float(tti)
 
 
 def main():
@@ -269,6 +281,12 @@ def main():
             break
 
         frame = cv2.resize(frame, (args.width, args.height))
+        if args.flip_horizontal and args.flip_vertical:
+            frame = cv2.flip(frame, -1)
+        elif args.flip_horizontal:
+            frame = cv2.flip(frame, 1)
+        elif args.flip_vertical:
+            frame = cv2.flip(frame, 0)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         current_hsv_frame = hsv
 
@@ -324,8 +342,8 @@ def main():
             cv2.circle(frame, center, int(radius), (0, 255, 255), 2)
             cv2.circle(frame, center, 5, (0, 0, 255), -1)
 
-            intercept_y = int(max(0, min(args.height - 1, args.intercept_y_px)))
-            cv2.line(frame, (0, intercept_y), (args.width - 1, intercept_y), (200, 120, 255), 1)
+            intercept_x = int(max(0, min(args.width - 1, args.intercept_x_px)))
+            cv2.line(frame, (intercept_x, 0), (intercept_x, args.height - 1), (200, 120, 255), 1)
 
             arrow_dx = smoothed_vx * args.velocity_arrow_scale
             arrow_dy = smoothed_vy * args.velocity_arrow_scale
@@ -339,8 +357,8 @@ def main():
                 center=center,
                 vx=smoothed_vx,
                 vy=smoothed_vy,
-                intercept_y=intercept_y,
-                frame_width=args.width,
+                intercept_x=intercept_x,
+                frame_height=args.height,
                 max_time_s=args.max_intercept_time,
             )
             if valid_int:
@@ -349,7 +367,7 @@ def main():
                 cv2.line(frame, center, pred_pt, (255, 0, 255), 1)
                 cv2.putText(
                     frame,
-                    f"INTERCEPT x:{pred_pt[0]} t:{tti:.2f}s",
+                    f"INTERCEPT y:{pred_pt[1]} t:{tti:.2f}s",
                     (10, 84),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.58,

@@ -16,27 +16,56 @@ def parse_args():
     parser.add_argument("--height", type=int, default=480, help="Frame height for packet metadata.")
     parser.add_argument(
         "--mode",
-        choices=["toward", "away", "zigzag"],
-        default="toward",
+        choices=["showcase", "toward", "away", "zigzag", "attack"],
+        default="showcase",
         help="Synthetic puck trajectory mode.",
     )
     return parser.parse_args()
 
 
-def generate_point(i, width, height, mode):
-    if mode == "toward":
-        x = 320 - (2 * i)
-        y = 120 + (3 * i)
-    elif mode == "away":
-        x = 220 + i
-        y = 420 - (3 * i)
-    else:  # zigzag
-        x = 320 + (120 if (i // 15) % 2 == 0 else -120)
-        y = 100 + (2 * i)
-
+def _clamp_point(x, y, width, height):
     x = max(0, min(width - 1, int(x)))
     y = max(0, min(height - 1, int(y)))
     return x, y
+
+
+def _showcase_point(i, total_packets, width, height):
+    section = max(1, total_packets // 4)
+    local_i = i % section
+    phase = min(3, i // section)
+
+    if phase == 0:
+        x = width - 80 - (4.5 * local_i)
+        y = height * 0.30 + (1.1 * local_i)
+    elif phase == 1:
+        x = width * 0.27 + (0.7 * local_i)
+        y = height * 0.64 - (0.2 * local_i)
+    elif phase == 2:
+        x = width * 0.36 - (1.0 * local_i)
+        y = height * 0.42 + (22 if (local_i // 10) % 2 == 0 else -22)
+    else:
+        x = width * 0.70 - (3.1 * local_i)
+        y = height * 0.72 - (1.4 * local_i)
+    return _clamp_point(x, y, width, height)
+
+
+def generate_point(i, width, height, mode, total_packets):
+    if mode == "showcase":
+        return _showcase_point(i, total_packets, width, height)
+    if mode == "toward":
+        x = width - 110 - (3.5 * i)
+        y = height * 0.28 + (1.8 * i)
+    elif mode == "away":
+        x = width * 0.20 + (2.4 * i)
+        y = height * 0.55 - (0.8 * i)
+    elif mode == "attack":
+        x = width * 0.24 + (0.35 * i)
+        y = height * 0.52 + (0.20 * i)
+    else:  # zigzag
+        x = width * 0.55 - (2.0 * i)
+        y = height * 0.35 + (38 if (i // 12) % 2 == 0 else -38)
+
+    return _clamp_point(x, y, width, height)
 
 
 def main():
@@ -53,7 +82,7 @@ def main():
     )
 
     for i in range(total_packets):
-        x, y = generate_point(i, args.width, args.height, args.mode)
+        x, y = generate_point(i, args.width, args.height, args.mode, total_packets)
         packet = {
             "timestamp": time.time(),
             "detected": True,

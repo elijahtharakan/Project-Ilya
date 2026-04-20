@@ -77,6 +77,12 @@ One-command Pi demo launcher:
 python run_pi_demo.py
 ```
 
+Top-down visual demo with a virtual paddle:
+
+```bash
+python run_pi_demo.py --visualizer
+```
+
 For Pi Camera Module use:
 
 ```bash
@@ -111,23 +117,30 @@ Visual camera verification (with velocity arrow overlay):
 python puck_tracker.py --camera 0 --width 640 --height 480
 ```
 
+If the camera preview looks mirrored or upside down, add one of:
+
+```bash
+python puck_tracker.py --camera 0 --width 640 --height 480 --flip-horizontal
+python puck_tracker.py --camera 0 --width 640 --height 480 --flip-vertical
+```
+
 Notes:
 - Click the puck once in the Puck Tracker window to auto-set HSV bounds.
 - Move the puck around and watch the blue arrow and velocity text update in real time.
 - Use `--velocity-arrow-scale` to tune arrow length (default `0.15`).
-- A pink horizontal line shows the intercept row (`--intercept-y-px`), and a pink dot shows predicted crossing point.
-- The overlay text `INTERCEPT x:... t:...s` updates as you move the puck.
+- A pink vertical line shows the robot goal/intercept line (`--intercept-x-px`), and a pink dot shows predicted crossing point.
+- The overlay text `INTERCEPT y:... t:...s` updates as you move the puck.
 
-Example with explicit intercept row and larger arrow:
+Example with explicit intercept line and larger arrow:
 
 ```bash
-python puck_tracker.py --camera 0 --width 640 --height 480 --intercept-y-px 420 --velocity-arrow-scale 0.2
+python puck_tracker.py --camera 0 --width 640 --height 480 --intercept-x-px 120 --velocity-arrow-scale 0.2
 ```
 
 Estimator:
 
 ```bash
-python puck_state_estimator.py --listen-port 5005 --output-udp-host 127.0.0.1 --output-udp-port 5006 --intercept-y 420
+python puck_state_estimator.py --listen-port 5005 --output-udp-host 127.0.0.1 --output-udp-port 5006 --intercept-x 120
 ```
 
 Planner bridge:
@@ -145,7 +158,7 @@ python planner_motor_bridge.py --listen-port 5006 --motor-host 127.0.0.1 --motor
 Synthetic estimator input (no camera):
 
 ```bash
-python synthetic_puck_feed.py --host 127.0.0.1 --port 5005 --mode toward --seconds 6
+python synthetic_puck_feed.py --host 127.0.0.1 --port 5005 --mode showcase --seconds 12
 ```
 
 Mock motor controller receiver:
@@ -164,10 +177,19 @@ One command launcher:
 python run_no_hardware_demo.py
 ```
 
+Top-down visual demo with synthetic puck motion and a virtual paddle:
+
+```bash
+python run_no_hardware_demo.py --visualizer
+```
+
+The default synthetic mode is `showcase`, which walks through multiple puck behaviors so the planner can visibly switch between defense, recovery/home, and attack-style responses.
+
 Optional launcher flags:
 
 ```bash
 python run_no_hardware_demo.py --prediction-source planner --mode zigzag --feed-seconds 10
+python run_no_hardware_demo.py --visualizer --mode attack --feed-seconds 8
 python run_no_hardware_demo.py --stay-alive
 ```
 
@@ -186,19 +208,35 @@ python planner_motor_bridge.py --listen-host 127.0.0.1 --listen-port 5006 --moto
 3. Terminal C (estimator):
 
 ```bash
-python puck_state_estimator.py --listen-host 127.0.0.1 --listen-port 5005 --output-udp-host 127.0.0.1 --output-udp-port 5006 --intercept-y 420
+python puck_state_estimator.py --listen-host 127.0.0.1 --listen-port 5005 --output-udp-host 127.0.0.1 --output-udp-port 5006 --intercept-x 120
 ```
 
 4. Terminal D (synthetic tracker feed):
 
 ```bash
-python synthetic_puck_feed.py --host 127.0.0.1 --port 5005 --mode toward --seconds 8
+python synthetic_puck_feed.py --host 127.0.0.1 --port 5005 --mode showcase --seconds 12
 ```
 
 Expected result:
 - Terminal A prints paddle target packets.
 - Terminal B prints mode/target JSON packets.
 - No camera or motor controller hardware is required.
+
+## Visualizer Demo
+
+`table_visualizer.py` listens to planner output packets and renders a top-down air hockey table view.
+It shows:
+- planner mode and reasoning
+- puck position and velocity
+- predicted intercept marker
+- target paddle command
+- a simulated virtual paddle moving toward the commanded target
+
+You can run it by itself if another process is already publishing planner packets:
+
+```bash
+python table_visualizer.py --listen-host 127.0.0.1 --listen-port 5007
+```
 
 ## Packet Summary
 

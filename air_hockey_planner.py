@@ -58,11 +58,12 @@ class PlannerConfig:
     watchdog_timeout: float = 0.40
     timestamp_jump_reject: float = 1.0
     velocity_smoothing_alpha: float = 0.35
-    defend_velocity_threshold: float = -0.12
-    attack_velocity_threshold: float = -0.05
+    defend_velocity_threshold: float = -0.18
+    attack_velocity_threshold: float = -0.08
     slow_puck_speed_threshold: float = 0.25
     attack_zone_x_max: float = 0.65
     intercept_uncertainty_time: float = 2.0
+    min_defense_prediction_confidence: float = 0.40
     intercept_y_margin: float = 0.02
     mode_hysteresis_seconds: float = 0.20
     conservative_ready_band: float = 0.015
@@ -511,7 +512,7 @@ class StrategyPlanner:
         in_attack_zone = puck_state.x <= self.config.attack_zone_x_max
 
         if moving_toward_robot:
-            if prediction and prediction.is_valid and prediction.confidence >= 0.25:
+            if prediction and prediction.is_valid and prediction.confidence >= self.config.min_defense_prediction_confidence:
                 return Mode.DEFENSE, "Puck moving toward robot with usable intercept prediction."
             return Mode.DEFENSE, "Puck moving toward robot; using conservative defense."
 
@@ -540,7 +541,12 @@ class StrategyPlanner:
         self, puck_state: PuckState, prediction: Optional[PredictionResult], paddle_state: PaddleState
     ) -> tuple[float, float, str]:
         target_x = self.config.defend_x
-        if prediction and prediction.is_valid and prediction.intercept_y is not None and prediction.confidence >= 0.25:
+        if (
+            prediction
+            and prediction.is_valid
+            and prediction.intercept_y is not None
+            and prediction.confidence >= self.config.min_defense_prediction_confidence
+        ):
             intercept_y = clamp(
                 prediction.intercept_y,
                 self.config.table.min_y + self.config.intercept_y_margin,

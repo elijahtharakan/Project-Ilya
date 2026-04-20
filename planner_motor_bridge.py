@@ -10,6 +10,15 @@ def clamp(value, low, high):
     return max(low, min(high, value))
 
 
+def estimator_prediction_confidence(vx_m_s, intercept_time_s):
+    speed_score = clamp((abs(float(vx_m_s)) - 0.12) / 0.45, 0.0, 1.0)
+    if intercept_time_s is None:
+        horizon_score = 0.0
+    else:
+        horizon_score = clamp(1.0 - (float(intercept_time_s) / 1.6), 0.0, 1.0)
+    return 0.5 * speed_score + 0.5 * horizon_score
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Bridge estimator output into planner targets and forward to motor controller."
@@ -96,6 +105,11 @@ def estimator_packet_to_planner_input(packet, table_length_m, table_width_m):
         y_norm = clamp(intercept_y_px / float(frame_h - 1), 0.0, 1.0)
         intercept_y_m = (0.5 - y_norm) * table_width_m
 
+    prediction_confidence = 0.0
+    if intercept_valid and intercept_time is not None:
+        prediction_confidence = estimator_prediction_confidence(vx_m_s=vx_m_s, intercept_time_s=intercept_time)
+        intercept_valid = prediction_confidence >= 0.30
+
     timestamp = float(packet.get("source_timestamp", packet.get("timestamp", time.time())))
     return ExternalPuckEstimate(
         timestamp=timestamp,
@@ -108,7 +122,7 @@ def estimator_packet_to_planner_input(packet, table_length_m, table_width_m):
         intercept_valid=intercept_valid,
         intercept_time=intercept_time,
         intercept_y=intercept_y_m,
-        prediction_confidence=0.8 if intercept_valid else 0.0,
+        prediction_confidence=prediction_confidence if intercept_valid else 0.0,
         prediction_reason="External estimator packet.",
     )
 
@@ -127,7 +141,10 @@ def estimator_packet_to_measurement(packet, table_length_m, table_width_m):
     return PuckMeasurement(timestamp=timestamp, x=x_m, y=y_m, confidence=1.0)
 
 
-def build_motor_packet(output, source_packet):
+def build_motor_packet(output, source_packet, args, mapped_puck):
+    puck_detected = bool(source_packet.get("detected", False)) and mapped_puck is not None
+    puck_x_m = float(mapped_puck[0]) if puck_detected else None
+    puck_y_m = float(mapped_puck[1]) if puck_detected else None
     return {
         "timestamp": time.time(),
         "source_timestamp": float(source_packet.get("source_timestamp", source_packet.get("timestamp", 0.0))),
@@ -141,6 +158,16 @@ def build_motor_packet(output, source_packet):
         "safety_limited": output.safety_limited,
         "estimated_puck_vx_m_s": output.estimated_puck_vx,
         "estimated_puck_vy_m_s": output.estimated_puck_vy,
+        "predicted_intercept_time_s": output.predicted_intercept_time,
+        "predicted_intercept_y_m": output.predicted_intercept_y,
+        "puck_detected": puck_detected,
+        "puck_x_m": puck_x_m,
+        "puck_y_m": puck_y_m,
+        "table_length_m": float(args.table_length_m),
+        "table_width_m": float(args.table_width_m),
+        "home_x_m": float(args.home_x_m),
+        "defend_x_m": float(args.defend_x_m),
+        "goal_x_m": float(args.goal_x_m),
         "debug_summary": output.debug_summary,
     }
 
@@ -190,7 +217,12 @@ def main():
                 )
                 output = planner.update(measurement=measurement, now=cycle_time)
 
-            motor_packet = build_motor_packet(output, estimator_packet)
+            mapped_puck = pixel_to_planner(
+                estimator_packet,
+                table_length_m=args.table_length_m,
+                table_width_m=args.table_width_m,
+            )
+            motor_packet = build_motor_packet(output, estimator_packet, args, mapped_puck)
             payload = json.dumps(motor_packet).encode("utf-8")
             output_socket.sendto(payload, motor_target)
 

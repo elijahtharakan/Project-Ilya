@@ -19,10 +19,12 @@ def parse_args():
         help="Number of recent detected samples used for velocity estimate.",
     )
     parser.add_argument(
+        "--intercept-x",
         "--intercept-y",
+        dest="intercept_x",
         type=float,
-        default=420.0,
-        help="Y line (in camera pixels) where robot expects to intercept puck.",
+        default=38.0,
+        help="X line (in camera pixels) where robot expects to intercept puck.",
     )
     parser.add_argument(
         "--frame-width",
@@ -65,17 +67,17 @@ def estimate_velocity(samples):
     return vx, vy
 
 
-def predict_intercept(x, y, vx, vy, intercept_y, frame_width):
-    """Predict where the puck crosses intercept_y if moving toward that line."""
-    if abs(vy) < 1e-6:
-        return False, -1.0, intercept_y, -1.0
+def predict_intercept(x, y, vx, vy, intercept_x, frame_height):
+    """Predict where the puck crosses intercept_x if moving toward that line."""
+    if abs(vx) < 1e-6:
+        return False, intercept_x, -1.0, -1.0
 
-    time_to_intercept = (intercept_y - y) / vy
+    time_to_intercept = (intercept_x - x) / vx
     if time_to_intercept <= 0:
-        return False, -1.0, intercept_y, -1.0
+        return False, intercept_x, -1.0, -1.0
 
-    intercept_x = x + (vx * time_to_intercept)
-    intercept_x = max(0.0, min(float(frame_width - 1), intercept_x))
+    intercept_y = y + (vy * time_to_intercept)
+    intercept_y = max(0.0, min(float(frame_height - 1), intercept_y))
     return True, intercept_x, intercept_y, time_to_intercept
 
 
@@ -96,7 +98,7 @@ def main():
 
     print(
         f"Estimator listening on {args.listen_host}:{args.listen_port}; "
-        f"intercept_y={args.intercept_y}"
+        f"intercept_x={args.intercept_x}"
     )
     if output_target is not None:
         print(f"Estimator forwarding packets to {output_target[0]}:{output_target[1]}")
@@ -131,8 +133,8 @@ def main():
             y=y,
             vx=vx,
             vy=vy,
-            intercept_y=args.intercept_y,
-            frame_width=args.frame_width,
+            intercept_x=args.intercept_x,
+            frame_height=int(packet.get("frame_height", 480)),
         )
 
         enriched = {
