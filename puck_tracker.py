@@ -41,7 +41,11 @@ def pick_color(event, x, y, _flags, _param):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Live puck tracker with coordinate publishing.")
-    parser.add_argument("--camera", type=int, default=0, help="Camera index (default: 0)")
+    parser.add_argument(
+        "--camera",
+        default="auto",
+        help="Camera index or 'auto' to prefer an external webcam before the built-in camera (default: auto).",
+    )
     parser.add_argument(
         "--capture-backend",
         choices=["opencv", "picamera2"],
@@ -118,6 +122,7 @@ def parse_args():
 
 class OpenCVCapture:
     def __init__(self, camera_index):
+        self.camera_index = camera_index
         self._capture = cv2.VideoCapture(camera_index)
 
     def isOpened(self):
@@ -164,7 +169,35 @@ class Picamera2Capture:
 def create_capture(args):
     if args.capture_backend == "picamera2":
         return Picamera2Capture(args.width, args.height)
-    return OpenCVCapture(args.camera)
+    camera_index = resolve_camera_index(args.camera)
+    return OpenCVCapture(camera_index)
+
+
+def _probe_camera_index(camera_index):
+    capture = OpenCVCapture(camera_index)
+    try:
+        if not capture.isOpened():
+            return False
+        ok, _frame = capture.read()
+        return bool(ok)
+    finally:
+        capture.release()
+
+
+def resolve_camera_index(camera_arg, max_probe_index=5):
+    """Resolve a camera selection, preferring external webcams for 'auto' mode."""
+    if isinstance(camera_arg, int):
+        return camera_arg
+
+    camera_text = str(camera_arg).strip().lower()
+    if camera_text != "auto":
+        return int(camera_text)
+
+    preferred_indices = list(range(1, max_probe_index + 1)) + [0]
+    for camera_index in preferred_indices:
+        if _probe_camera_index(camera_index):
+            return camera_index
+    return 0
 
 
 def detect_puck_from_mask(mask, min_area):
@@ -232,10 +265,15 @@ def main():
     except RuntimeError as exc:
         print(str(exc))
         return
+    except ValueError:
+        print("Error: --camera must be an integer index or 'auto'.")
+        return
 
     if not cap.isOpened():
         print("Error: Could not open camera.")
         return
+    if args.capture_backend == "opencv":
+        print(f"Using OpenCV camera index {cap.camera_index}.")
 
     udp_socket = None
     udp_target = None

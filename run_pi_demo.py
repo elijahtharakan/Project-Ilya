@@ -9,7 +9,11 @@ from pathlib import Path
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run the camera-backed air hockey pipeline on a Raspberry Pi.")
-    parser.add_argument("--camera", type=int, default=0, help="Camera index for puck_tracker.py (default: 0).")
+    parser.add_argument(
+        "--camera",
+        default="auto",
+        help="Camera index for puck_tracker.py, or 'auto' to prefer an external webcam (default: auto).",
+    )
     parser.add_argument(
         "--capture-backend",
         choices=["opencv", "picamera2"],

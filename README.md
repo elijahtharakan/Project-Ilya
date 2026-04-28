@@ -101,27 +101,27 @@ Combine both for a headless Pi Camera Module run:
 python run_pi_demo.py --no-gui --capture-backend picamera2
 ```
 
-If your camera is not index `0`, change it with `--camera N`.
+By default, the tracker now uses `--camera auto`, which probes for a nonzero USB webcam first and falls back to camera index `0`. To force a specific device, use `--camera N`.
 
 ## Run Commands
 
 Tracker:
 
 ```bash
-python puck_tracker.py --camera 0 --width 640 --height 480 --udp-host 127.0.0.1 --udp-port 5005
+python puck_tracker.py --camera auto --width 640 --height 480 --udp-host 127.0.0.1 --udp-port 5005
 ```
 
 Visual camera verification (with velocity arrow overlay):
 
 ```bash
-python puck_tracker.py --camera 0 --width 640 --height 480
+python puck_tracker.py --camera auto --width 640 --height 480
 ```
 
 If the camera preview looks mirrored or upside down, add one of:
 
 ```bash
-python puck_tracker.py --camera 0 --width 640 --height 480 --flip-horizontal
-python puck_tracker.py --camera 0 --width 640 --height 480 --flip-vertical
+python puck_tracker.py --camera auto --width 640 --height 480 --flip-horizontal
+python puck_tracker.py --camera auto --width 640 --height 480 --flip-vertical
 ```
 
 Notes:

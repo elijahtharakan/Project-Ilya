@@ -1,9 +1,10 @@
 import unittest
+from unittest import mock
 
 import cv2
 import numpy as np
 
-from puck_tracker import build_tracker_packet, detect_puck_from_mask, predict_intercept_pixel
+from puck_tracker import build_tracker_packet, detect_puck_from_mask, predict_intercept_pixel, resolve_camera_index
 
 
 class TestPuckTracker(unittest.TestCase):
@@ -62,6 +63,14 @@ class TestPuckTracker(unittest.TestCase):
         self.assertEqual(packet["x_norm"], -1.0)
         self.assertEqual(packet["y_norm"], -1.0)
         self.assertEqual(packet["radius"], 0.0)
+
+    def test_resolve_camera_index_prefers_external_webcam_in_auto_mode(self):
+        with mock.patch("puck_tracker._probe_camera_index", side_effect=lambda index: index == 2):
+            self.assertEqual(resolve_camera_index("auto"), 2)
+
+    def test_resolve_camera_index_falls_back_to_zero_in_auto_mode(self):
+        with mock.patch("puck_tracker._probe_camera_index", side_effect=lambda index: index == 0):
+            self.assertEqual(resolve_camera_index("auto"), 0)
 
     def test_predict_intercept_pixel_valid(self):
         valid, x_pred, y_pred, tti = predict_intercept_pixel(

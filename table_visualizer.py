@@ -300,31 +300,6 @@ def main():
                 draw_label(canvas, line, (sidebar_x, y_cursor), (230, 237, 239), scale=0.52, thickness=1)
                 y_cursor += 34
 
-            reason = latest_packet.get("reason", "") if has_packet else ""
-            debug_summary = latest_packet.get("debug_summary", "") if has_packet else ""
-            wrapped_text = []
-            for text in (reason, debug_summary):
-                if not text:
-                    continue
-                words = text.split()
-                current = ""
-                for word in words:
-                    candidate = word if not current else f"{current} {word}"
-                    if len(candidate) > 34:
-                        wrapped_text.append(current)
-                        current = word
-                    else:
-                        current = candidate
-                if current:
-                    wrapped_text.append(current)
-
-            if wrapped_text:
-                draw_label(canvas, "Planner reasoning", (sidebar_x, y_cursor + 12), (255, 214, 125), scale=0.58, thickness=1)
-                y_cursor += 44
-                for line in wrapped_text[:10]:
-                    draw_label(canvas, line, (sidebar_x, y_cursor), (229, 232, 234), scale=0.47, thickness=1)
-                    y_cursor += 28
-
             draw_label(
                 canvas,
                 "Esc to close",
